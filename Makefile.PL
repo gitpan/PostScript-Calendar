@@ -25,7 +25,7 @@
       chdir $cwd or die "Cannot chdir() back to $cwd: $!";
     }
     eval "use Module::Build::Compat 0.02; 1" or die $@;
-    use lib '.';
+    use lib 'tools';
     Module::Build::Compat->run_build_pl(args => \@ARGV);
     require My_Build;
     Module::Build::Compat->write_makefile(build_class => 'My_Build');

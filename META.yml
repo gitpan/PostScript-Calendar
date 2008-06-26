@@ -1,8 +1,8 @@
 ---
 name: PostScript-Calendar
-version: 0.03
+version: 0.04
 author:
-  - Christopher J. Madsen <perl@cjmweb.net>
+  - 'Christopher J. Madsen <perl@cjmweb.net>'
 abstract: Generate a monthly calendar in PostScript
 license: perl
 resources:
@@ -22,13 +22,13 @@ dynamic_config: 0
 provides:
   PostScript::Calendar:
     file: lib/PostScript/Calendar.pm
-    version: 0.03
+    version: 0.04
   PostScript::Calendar::Interpolation:
     file: lib/PostScript/Calendar.pm
-generated_by: Module::Build version 0.2805
+generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
   version: 1.2
 no_index:
-  file:
-    - My_Build.pm
+  directory:
+    - tools
