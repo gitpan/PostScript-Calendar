@@ -1,34 +1,28 @@
 ---
-name: PostScript-Calendar
-version: 0.04
+abstract: 'Generate a monthly calendar in PostScript'
 author:
   - 'Christopher J. Madsen <perl@cjmweb.net>'
-abstract: Generate a monthly calendar in PostScript
-license: perl
-resources:
-  license: http://dev.perl.org/licenses/
-requires:
-  Date::Calc: 5.0
-  Font::AFM: 1
-  PostScript::File: 1
-  perl: 5.6.0
 build_requires:
   FindBin: 0
   Module::Build: 0.21
   Test::More: 0
-recommends:
-  Astro::MoonPhase: 0.60
-dynamic_config: 0
-provides:
-  PostScript::Calendar:
-    file: lib/PostScript/Calendar.pm
-    version: 0.04
-  PostScript::Calendar::Interpolation:
-    file: lib/PostScript/Calendar.pm
-generated_by: Module::Build version 0.2808
+configure_requires:
+  Module::Build: 0.21
+generated_by: 'Dist::Zilla version 1.100711'
+license: perl
 meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.2.html
-  version: 1.2
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: PostScript-Calendar
 no_index:
   directory:
     - tools
+recommends:
+  Astro::MoonPhase: 0.60
+requires:
+  Date::Calc: 5.0
+  PostScript::File: 2.01
+  perl: 5.8.0
+resources:
+  repository: http://github.com/madsen/postscript-calendar
+version: 0.05

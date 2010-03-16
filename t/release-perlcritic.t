@@ -1,12 +1,15 @@
 #! /usr/bin/perl
-#---------------------------------------------------------------------
-# $Id: perlcritic.t 2031 2008-06-25 17:00:00Z cjm $
+
+BEGIN {
+  unless ($ENV{RELEASE_TESTING}) {
+    require Test::More;
+    Test::More::plan(skip_all => 'these tests are for release candidate testing');
+  }
+}
+
 #---------------------------------------------------------------------
 
 use Test::More;
-
-plan skip_all => "Don't want automated Perl::Critic reports"
-    if $ENV{AUTOMATED_TESTING};
 
 # ProhibitAccessOfPrivateData is a badly implemented policy that bans
 # all use of hashrefs

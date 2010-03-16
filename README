@@ -1,4 +1,5 @@
-PostScript::Calendar version 0.04, released June 25, 2008
+PostScript::Calendar version 0.05, released March 15, 2010
+
 
 PostScript::Calendar generates printable calendars using PostScript.
 
@@ -17,19 +18,15 @@ To install this module, run the following commands:
     ./Build test
     ./Build install
 
-See the CONFIGURATION AND ENVIRONMENT section of the documentation for
-some tips on getting Font::AFM properly configured.
-
 
 
 DEPENDENCIES
 
   Package           Minimum Version
   ----------------- ---------------
-  perl               5.6.0
+  perl               5.8.0
   Date::Calc         5.0
-  Font::AFM          1.0
-  PostScript::File   1.0
+  PostScript::File   2.01
 
 To display phases of the moon:
   Astro::MoonPhase   0.60
@@ -37,20 +34,22 @@ To display phases of the moon:
 
 
 CHANGES
-    Here's what's new in version 0.04 of PostScript::Calendar:
+    Here's what's new in version 0.05 of PostScript::Calendar:
     (See the file "Changes" for the full revision history.)
 
-	- No functional changes
-	- Minor clean up to documentation
-	- Exclude ProhibitAccessOfPrivateData from perlcritic.t
-	- Skip perlcritic.t under AUTOMATED_TESTING
-	- Use Module::Build::DistVersion for packaging
+	- PostScript::File 2.00 now provides pstr and metrics
+	  Font::AFM is no longer required!
+	  This makes it much easier to get PostScript::Calendar working.
+	- Now possible to include multiple calendars in one PostScript file
+	  See example/calendar.pl for one way to do that.
+	- The ps_file method actually works now
+	- Switch to Dist::Zilla for packaging
 
 
 
 COPYRIGHT AND LICENSE
 
-Copyright 2007 Christopher J. Madsen
+This software is copyright (c) 2010 by Christopher J. Madsen.
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.

@@ -1,11 +1,10 @@
 #---------------------------------------------------------------------
 package PostScript::Calendar;
 #
-# Copyright 2007 Christopher J. Madsen
+# Copyright 2010 Christopher J. Madsen
 #
 # Author: Christopher J. Madsen <perl@cjmweb.net>
 # Created: Sat Nov 25 14:32:55 2006
-# $Id: Calendar.pm 2037 2008-06-26 00:23:45Z cjm $
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the same terms as Perl itself.
@@ -15,21 +14,22 @@ package PostScript::Calendar;
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See either the
 # GNU General Public License or the Artistic License for more details.
 #
-# Generate a PostScript calendar
+# ABSTRACT: Generate a monthly calendar in PostScript
 #---------------------------------------------------------------------
 
-use 5.006;
+use 5.008;
 use warnings;
 use strict;
 use Carp;
 use Date::Calc qw(Add_Delta_YM Day_of_Week Day_of_Week_to_Text
                   Days_in_Month Localtime Mktime Month_to_Text);
-use Font::AFM;
+use PostScript::File 2.01;
+
 
 #=====================================================================
 # Package Global Variables:
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
 
@@ -42,25 +42,10 @@ our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
   sub FETCH   { $_[0]->($_[1]) }
 } # end PostScript::Calendar::Interpolation
 
-our (%E, %S);
+our (%E, %S, $psFile);
 tie %E, 'PostScript::Calendar::Interpolation', sub { $_[0] }; # eval
-tie %S, 'PostScript::Calendar::Interpolation', \&psstring;    # quoted string
-
-#---------------------------------------------------------------------
-# Create a properly quoted PostScript string:
-
-my %special = (
-  "\n" => '\n', "\r" => '\r', "\t" => '\t', "\b" => '\b',
-  "\f" => '\f', "\\" => '\\', "("  => '\(', ")"  => '\)',
-);
-my $specialKeys = join '', keys %special;
-
-sub psstring
-{
-  my $string = $_[0];
-  $string =~ s/([$specialKeys])/$special{$1}/go;
-  "($string)";
-} # end psstring
+# quoted string:
+tie %S, 'PostScript::Calendar::Interpolation', sub { $psFile->pstr(shift) };
 
 #---------------------------------------------------------------------
 # Return the first defined value:
@@ -167,15 +152,20 @@ sub new
   } # end if title is suppressed
 
   unless ($self->{psFile}) {
-    require PostScript::File;
+    my %font;
+    while (my ($k, $v) = each %$self) {
+      next unless $k =~ /Font$/;
+      $font{ $v =~ /^(.+)-iso$/ ? $1 : $v } = 1;
+    }
+
     $self->{psFile} = PostScript::File->new(
       paper       => ($p{paper} || 'Letter'),
       top         => $self->{topMar},
       left        => $self->{sideMar},
       right       => $self->{sideMar},
-      title       => psstring($self->{title}),
-      reencode    => 'ISOLatin1Encoding',
-      font_suffix => '-iso',
+      title       => PostScript::File->pstr($self->{title}),
+      reencode    => 'cp1252',
+      need_fonts  => [ keys %font ],
       landscape   => $p{landscape},
     );
   }
@@ -240,14 +230,10 @@ sub compute_grid
 #---------------------------------------------------------------------
 sub get_metrics
 {
-  my ($self, $font) = @_;
-  $font =~ s/-iso$//;
+  my ($self, $font, $size) = @_;
 
-  my $metrics = $self->{fontCache}{$font};
-
-  return $metrics if $metrics;
-
-  $self->{fontCache}{$font} = Font::AFM->new($font);
+  $self->{fontCache}{$font}{$size}
+      ||= $self->{psFile}->get_metrics($font, $size);
 } # end get_metrics
 
 #---------------------------------------------------------------------
@@ -297,7 +283,8 @@ sub print_calendar
 {
   my ($self, $grid, %p) = @_;
 
-  my $ps = $self->{psFile};
+  # Must set $psFile for interpolation
+  local $psFile = my $ps = $self->{psFile};
 
   $ps->add_to_page( <<"END_TITLE" ) if length($p{title});
 $p{titleFont}$p{midpoint} $p{titleY} $S{$p{title}} showcenter
@@ -355,8 +342,8 @@ sub print_mini_calendar
   my $linespacing = $fontsize + $self->{miniSkip};
   my $sideMar     = $self->{miniSideMar};
 
-  my $font = $self->get_metrics($self->{miniFont});
-  my $numWidth = $font->stringwidth('22', $fontsize);
+  my $font = $self->get_metrics($self->{miniFont}, $fontsize);
+  my $numWidth = $font->width('22');
 
   my $colSpacing = (($cols > 1)
                     ? ($width - 2 * $sideMar - $cols * $numWidth) / ($cols - 1)
@@ -430,8 +417,9 @@ sub wrap_events
 {
   my ($self, $y, $width, $height, $events, $date) = @_;
 
-  my $metrics      = $self->get_metrics($self->{eventFont});
+  my $ps           = $self->{psFile};
   my $eventSize    = $self->{eventSize};
+  my $metrics      = $self->get_metrics($self->{eventFont}, $eventSize);
   my $eventSpacing = $eventSize + $self->{eventSkip};
 
   my $dateSize   = $self->{dateSize};
@@ -440,9 +428,9 @@ sub wrap_events
   my $fullWidth = ($width -= $self->{eventLeftMar} + $self->{eventRightMar});
 
   if ($y > $dateBottom) {
-    my $dateMetrics = $self->get_metrics($self->{dateFont});
+    my $dateMetrics = $self->get_metrics($self->{dateFont}, $dateSize);
 
-    $width -= ($dateMetrics->stringwidth($date, $dateSize) +
+    $width -= ($dateMetrics->width($date) +
                $self->{dateRightMar});
   }
 
@@ -462,7 +450,7 @@ sub wrap_events
       s/\s+$//;                 # Remove trailing space, if any
 
       $next = '';
-      while (($metrics->stringwidth($_, $eventSize) > $width) and
+      while (($metrics->width($_) > $width) and
              (s/-([^- \t]+-*)$/-/ or
               s/([ \t]+[^- \t]*-*)$// or
               s/(.)$//)) {
@@ -476,7 +464,7 @@ sub wrap_events
     } # end for this event string
   } # end for each event
 
-  join("\n", map { psstring($_) } @$events);
+  join("\n", map { $ps->pstr($_) } @$events);
 } # end wrap_events
 
 #---------------------------------------------------------------------
@@ -545,10 +533,7 @@ sub generate
 0 setlinecap
 0 setlinejoin
 3 pixel setlinewidth
-END_PAGE_INIT
 
-  unless ($ps->has_function('PostScript_Calendar'))
-  { $ps->add_function('PostScript_Calendar', <<"END_FUNCTIONS") }
 /DayHeight $dayHeight def
 /DayWidth $dayWidth def
 /TitleSize $titleSize def
@@ -562,7 +547,10 @@ END_PAGE_INIT
 /EventSpacing $E{$self->{eventSize} + $self->{eventSkip}} def
 /MiniSize $self->{miniSize} def
 /MiniFont /$self->{miniFont} findfont MiniSize scalefont def
+END_PAGE_INIT
 
+  unless ($ps->has_function('PostScript_Calendar'))
+  { $ps->add_function('PostScript_Calendar', <<'END_FUNCTIONS') }
 /pixel {72 mul 300 div} bind def % 300 dpi only
 
 %---------------------------------------------------------------------
@@ -663,7 +651,7 @@ END_PAGE_INIT
     show
   } forall
   pop pop        % pop off X & Y
-} def
+} bind def
 
 %---------------------------------------------------------------------
 % Fill a day rect with the current ink:
@@ -677,7 +665,7 @@ END_PAGE_INIT
   0 DayHeight lineto
   closepath
   fill
-} def
+} bind def
 
 %---------------------------------------------------------------------
 % Shade a day with the default background:
@@ -701,10 +689,10 @@ END_FUNCTIONS
       $phase = ($phase + 1) % 4;
     } # end while @dates
 
-    unless ($ps->has_function('PostScript_Calendar_Moon'))
-    { $ps->add_function('PostScript_Calendar_Moon', <<"END_MOON_FUNCTIONS") }
-/MoonMargin $self->{moonMargin} def
+    $ps->add_to_page("/MoonMargin $self->{moonMargin} def\n");
 
+    unless ($ps->has_function('PostScript_Calendar_Moon'))
+    { $ps->add_function('PostScript_Calendar_Moon', <<'END_MOON_FUNCTIONS') }
 %---------------------------------------------------------------------
 % Show the phase of the moon:  PHASE ShowPhase
 
@@ -718,7 +706,7 @@ END_FUNCTIONS
   0 360 arc
   closepath
   cvx exec
-} def
+} bind def
 
 /NewMoon { fill } bind def
 /FullMoon { gsave 1 setgray fill grestore stroke } bind def
@@ -732,7 +720,7 @@ END_FUNCTIONS
   DateSize 2 div
   90 270 arc
   closepath fill
-} def
+} bind def
 
 /LastQuarter
 {
@@ -743,7 +731,7 @@ END_FUNCTIONS
   DateSize 2 div
   270 90 arc
   closepath fill
-} def
+} bind def
 END_MOON_FUNCTIONS
   } # end if showing phases of the moon
 
@@ -839,7 +827,7 @@ sub output
 } # end output
 
 #---------------------------------------------------------------------
-sub ps_file { $_[0]->{ps_file} }
+sub ps_file { $_[0]->{psFile} }
 
 #=====================================================================
 # Package Return Value:
@@ -854,8 +842,8 @@ PostScript::Calendar - Generate a monthly calendar in PostScript
 
 =head1 VERSION
 
-This document describes version 0.04 of PostScript::Calendar, released June 25, 2008.
-
+This document describes version 0.05 of
+PostScript::Calendar, released March 15, 2010.
 
 =head1 SYNOPSIS
 
@@ -864,7 +852,6 @@ This document describes version 0.04 of PostScript::Calendar, released June 25, 
   my $cal = PostScript::Calendar->new($year, $month, phases => 1,
                                       mini_calendars => 'before');
   $cal->output('filename');
-
 
 =head1 DESCRIPTION
 
@@ -880,14 +867,16 @@ Sunday is either 0 or 7, Monday is 1, etc.).
 
 All dimensions are specified in PostScript points (72 per inch).
 
-=head1 INTERFACE
+=head1 METHODS
 
-=head2 C<< $cal = PostScript::Calendar->new($year, $month, [key => value, ...]) >>
+=head2 new
+
+  $cal = PostScript::Calendar->new($year, $month, [key => value, ...])
 
 This constructs a new PostScript::Calendar object for C<$year> and C<$month>.
 
 There are a large number of parameters you can pass to customize how
-the calendar is displayed.  They are all passed as S<< C<< name => value >> >>
+the calendar is displayed.  They are all passed as C<< name => value >>
 pairs.
 
 =over
@@ -927,7 +916,7 @@ Astro::MoonPhase 0.60).  The default is false.
 =item C<title>
 
 The title to be printed at the top of the calendar.  The default is
-"Month YEAR" (where Month comes from Month_to_Text, and YEAR is
+"Month YEAR" (where Month comes from C<Month_to_Text>, and YEAR is
 numeric.)  Setting this to the empty string automatically sets
 C<title_size> and C<title_skip> to 0 (completely suppressing the title).
 
@@ -1101,41 +1090,60 @@ created.
 
 =back
 
-=head2 C<< $cal->add_event($date, $message) >>
+
+=head2 add_event
+
+  $cal->add_event($date, $message)
 
 This prints the text C<$message> on C<$date>, where C<$date> is the
 day of the month.  You may call this multiple times for the same date.
 Messages will be printed in the order they were added.  C<$message>
 may contain newlines to force line breaks.
 
-=head2 C<< $cal->shade($date, ...) >>
 
-This colors the background of the specified date(s) a light gray,
-where C<$date> is the day of the month.  Any number of dates can be
-given.
+=head2 generate
 
-=head2 C<< $cal->shade_days_of_week($day, ...) >>
-
-This calls C<shade> for all dates that fall on the specified day(s) of
-the week.  Each C<$day> should be 0-7 (where Sunday is either 0 or 7).
-
-=head2 C<< $cal->generate >>
+  $cal->generate
 
 This actually generates the calendar, placing it in the
 PostScript::File object.  You shouldn't need to call this, because
 C<output> calls it automatically.
 
-=head2 C<< $cal->output($filename) >>
+
+=head2 output
+
+  $cal->output($filename)
 
 This passes its parameters to C<PostScript::File::output> (after
 calling C<generate> if necessary).  Normally, you just pass the
 filename to write.  Note that PostScript::File will append ".ps" to
 the output filename.
 
-=head2 C<< $cal->ps_file >>
+
+=head2 ps_file
+
+  $cal->ps_file
 
 This returns the PostScript::File object that C<$cal> is using.  Only
 needed for advanced techniques.
+
+
+
+=head2 shade
+
+  $cal->shade($date, ...)
+
+This colors the background of the specified date(s) a light gray,
+where C<$date> is the day of the month.  Any number of dates can be
+given.
+
+
+=head2 shade_days_of_week
+
+  $cal->shade_days_of_week($day, ...)
+
+This calls C<shade> for all dates that fall on the specified day(s) of
+the week.  Each C<$day> should be 0-7 (where Sunday is either 0 or 7).
 
 =head1 DIAGNOSTICS
 
@@ -1147,63 +1155,64 @@ You supplied more event text for the specified date than would fit in
 the box.  You'll have to use a smaller font, smaller margins, or less
 text.
 
-=back
 
+
+
+=back
 
 =head1 CONFIGURATION AND ENVIRONMENT
 
 PostScript::Calendar requires no configuration files or environment variables.
 
-However, it uses L<Font::AFM>, and unfortunately that's difficult to
-configure properly.  I wound up creating symlinks in
-C</usr/local/lib/afm/> (which is one of the default paths that
-Font::AFM searches if you don't have a C<METRICS> environment
-variable):
-
- Helvetica.afm         -> /usr/share/fonts/afms/adobe/phvr8a.afm
- Helvetica-Oblique.afm -> /usr/share/fonts/afms/adobe/phvro8a.afm
-
-Paths on your system may vary.  I suggest searching for C<.afm> files,
-and then grepping them for "FontName Helvetica".  Helvetica and
-Helvetica-Oblique are the two fonts that PostScript::Calendar uses by
-default, and Font::AFM expects to find files named C<Helvetica.afm>
-and C<Helvetica-Oblique.afm>.
-
 =head1 DEPENDENCIES
 
-L<Date::Calc> (5.0 or later), L<Font::AFM>, and L<PostScript::File>.
+L<Date::Calc> (5.0 or later)
+and L<PostScript::File> (2.01 or later).
 
 If you want to display phases of the moon, you'll need
-L<Astro::MoonPhase> 0.60 or later.
+L<Astro::MoonPhase> (0.60 or later).
 
+All of these are available on CPAN.
 
 =head1 INCOMPATIBILITIES
 
 None reported.
 
-
 =head1 BUGS AND LIMITATIONS
 
 No bugs have been reported.
 
+=for Pod::Coverage::TrustPod
+^Add_Delta_M
+^calc_moon_phases
+^compute_grid
+^ev[A-Z]
+^firstdef
+^get_metrics
+^print_calendar
+^print_events
+^print_mini_calendar
+^round
+^wrap_events
 
 =head1 AUTHOR
 
-Christopher J. Madsen  C<< <perl AT cjmweb.net> >>
+Christopher J. Madsen  C<< <perl AT cjmweb.net> >>
 
 Please report any bugs or feature requests to
-S<< C<< <bug-PostScript-Calendar AT rt.cpan.org> >> >>,
+C<< <bug-PostScript-Calendar AT rt.cpan.org> >>,
 or through the web interface at
 L<http://rt.cpan.org/Public/Bug/Report.html?Queue=PostScript-Calendar>
 
+You can follow or contribute to PostScript-Calendar's development at
+L<< http://github.com/madsen/postscript-calendar >>.
 
-=head1 LICENSE AND COPYRIGHT
+=head1 COPYRIGHT AND LICENSE
 
-Copyright 2007 Christopher J. Madsen. All rights reserved.
+This software is copyright (c) 2010 by Christopher J. Madsen.
 
-This module is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself. See L<perlartistic>.
-
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
 
 =head1 DISCLAIMER OF WARRANTY
 
@@ -1227,3 +1236,5 @@ RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A
 FAILURE OF THE SOFTWARE TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF
 SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGES.
+
+=cut
