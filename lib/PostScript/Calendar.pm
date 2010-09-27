@@ -29,7 +29,7 @@ use PostScript::File 2.01;
 #=====================================================================
 # Package Global Variables:
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
 
@@ -146,18 +146,14 @@ sub new
       ($p{day_names} or
        [ map { Day_of_Week_to_Text($_ % 7 || 7) } @$days ]);
 
+  # If no title, suppress it completely:
   if (not length $self->{title}) {
     $self->{titleSize} = 0;
     $self->{titleSkip} = 0;
   } # end if title is suppressed
 
+  # Create a PostScript::File object if necessary:
   unless ($self->{psFile}) {
-    my %font;
-    while (my ($k, $v) = each %$self) {
-      next unless $k =~ /Font$/;
-      $font{ $v =~ /^(.+)-iso$/ ? $1 : $v } = 1;
-    }
-
     $self->{psFile} = PostScript::File->new(
       paper       => ($p{paper} || 'Letter'),
       top         => $self->{topMar},
@@ -165,11 +161,23 @@ sub new
       right       => $self->{sideMar},
       title       => PostScript::File->pstr($self->{title}),
       reencode    => 'cp1252',
-      need_fonts  => [ keys %font ],
       landscape   => $p{landscape},
     );
-  }
 
+    $self->{psFile}->add_comment(
+      sprintf 'Creator: %s %s', ref($self), $self->VERSION
+    );
+  } # end unless supplied ps_file
+
+  # Compile the list of required fonts:
+  my %font;
+  while (my ($k, $v) = each %$self) {
+    next unless $k =~ /Font$/;
+    $font{ $v =~ /^(.+)-iso$/ ? $1 : $v } = 1;
+  }
+  $self->{psFile}->need_resource(font => keys %font);
+
+  # Shade specified days of the week:
   $self->shade_days_of_week(@{ $p{shade_days_of_week} })
       if $p{shade_days_of_week};
 
@@ -527,8 +535,6 @@ sub generate
   my $gridHeight = $dayTop - $gridBottom + $dayLabelSize + $labelSkip;
   my $gridTop    = $gridBottom + $gridHeight;
 
-  $ps->add_comment(sprintf 'Creator: %s %s', ref($self), $self->VERSION);
-
   $ps->add_to_page(<<"END_PAGE_INIT");
 0 setlinecap
 0 setlinejoin
@@ -842,8 +848,8 @@ PostScript::Calendar - Generate a monthly calendar in PostScript
 
 =head1 VERSION
 
-This document describes version 0.05 of
-PostScript::Calendar, released March 15, 2010.
+This document describes version 0.06 of
+PostScript::Calendar, released September 27, 2010.
 
 =head1 SYNOPSIS
 
@@ -876,7 +882,7 @@ All dimensions are specified in PostScript points (72 per inch).
 This constructs a new PostScript::Calendar object for C<$year> and C<$month>.
 
 There are a large number of parameters you can pass to customize how
-the calendar is displayed.  They are all passed as C<< name => value >>
+the calendar is displayed.  They are all passed as S<C<< name => value >>>
 pairs.
 
 =over
@@ -1086,7 +1092,7 @@ Not used if you supply C<ps_file>.
 
 Allows you to pass in a PostScript::File (or compatible) object for
 the calendar to use.  By default, a new PostScript::File object is
-created.
+created.  Passing an explicit C<undef> also creates a new object.
 
 =back
 
@@ -1197,10 +1203,10 @@ No bugs have been reported.
 
 =head1 AUTHOR
 
-Christopher J. Madsen  C<< <perl AT cjmweb.net> >>
+Christopher J. Madsen  S<C<< <perl AT cjmweb.net> >>>
 
 Please report any bugs or feature requests to
-C<< <bug-PostScript-Calendar AT rt.cpan.org> >>,
+S<C<< <bug-PostScript-Calendar AT rt.cpan.org> >>>,
 or through the web interface at
 L<http://rt.cpan.org/Public/Bug/Report.html?Queue=PostScript-Calendar>
 

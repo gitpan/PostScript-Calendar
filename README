@@ -1,4 +1,4 @@
-PostScript::Calendar version 0.05, released March 15, 2010
+PostScript::Calendar version 0.06, released September 27, 2010
 
 
 PostScript::Calendar generates printable calendars using PostScript.
@@ -29,21 +29,18 @@ DEPENDENCIES
   PostScript::File   2.01
 
 To display phases of the moon:
-  Astro::MoonPhase   0.60
 
 
 
 CHANGES
-    Here's what's new in version 0.05 of PostScript::Calendar:
+    Here's what's new in version 0.06 of PostScript::Calendar:
     (See the file "Changes" for the full revision history.)
 
-	- PostScript::File 2.00 now provides pstr and metrics
-	  Font::AFM is no longer required!
-	  This makes it much easier to get PostScript::Calendar working.
-	- Now possible to include multiple calendars in one PostScript file
-	  See example/calendar.pl for one way to do that.
-	- The ps_file method actually works now
-	- Switch to Dist::Zilla for packaging
+	- Add a Creator comment only if we create the PostScript::File object
+	- Document that passing ps_file => undef creates a new object
+	- List the fonts we use even when given a ps_file
+	- Force timezone in tests for consistent results
+	- Figured out how to avoid Latin-1 in POD (S<C<< >>> works correctly)
 
 
 
