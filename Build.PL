@@ -25,7 +25,7 @@ my $builder = My_Build->new(
   'build_requires' => {
     'FindBin' => '0',
     'Module::Build' => '0.21',
-    'Test::More' => '0'
+    'Test::More' => '0.88'
   },
   'configure_requires' => {
     'Module::Build' => '0.21'

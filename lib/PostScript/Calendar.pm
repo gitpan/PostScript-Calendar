@@ -29,7 +29,7 @@ use PostScript::File 2.01;
 #=====================================================================
 # Package Global Variables:
 
-our $VERSION = '0.06';
+our $VERSION = '1.00';
 
 our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
 
@@ -848,8 +848,8 @@ PostScript::Calendar - Generate a monthly calendar in PostScript
 
 =head1 VERSION
 
-This document describes version 0.06 of
-PostScript::Calendar, released September 27, 2010.
+This document describes version 1.00 of
+PostScript::Calendar, released November 11, 2010.
 
 =head1 SYNOPSIS
 
@@ -1211,7 +1211,7 @@ or through the web interface at
 L<http://rt.cpan.org/Public/Bug/Report.html?Queue=PostScript-Calendar>
 
 You can follow or contribute to PostScript-Calendar's development at
-L<< http://github.com/madsen/postscript-calendar >>.
+git://github.com/madsen/postscript-calendar.git.
 
 =head1 COPYRIGHT AND LICENSE
 
