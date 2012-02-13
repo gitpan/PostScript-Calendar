@@ -1,5 +1,14 @@
 Revision history for PostScript::Calendar
 
+1.01   February 12, 2012
+	- New constructor parameters: border_width, grid, grid_width,
+	  moon_dark, moon_light, & shade_color
+	- The shade methods can now take options to customize the color.
+	  This will generate code that requires PostScript level 2.
+	- PostScript::Calendar objects can now be passed to PostScript::Convert
+	- Use the function library provided by PostScript::File 2.20
+	- All comments are stripped from the generated PostScript
+
 1.00   November 11, 2010
 	- No functional changes
 	- Restart test if necessary to pick up timezone change (Windows)

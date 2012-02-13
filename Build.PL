@@ -9,13 +9,9 @@
 use strict;
 use warnings;
 
-# Make sure we're using My_Build from our distribution:
-use FindBin;
-use lib "$FindBin::Bin/tools";
+use inc::My_Build;          # Our customized version of Module::Build
 
-use My_Build;          # Our customized version of Module::Build
-
-my $builder = My_Build->new(
+my $builder = inc::My_Build->new(
   module_name        => 'PostScript::Calendar',
   license            => 'perl',
   dist_author        => 'Christopher J. Madsen <perl@cjmweb.net>',
@@ -28,15 +24,18 @@ my $builder = My_Build->new(
     'Test::More' => '0.88'
   },
   'configure_requires' => {
-    'Module::Build' => '0.21'
+    'File::Spec' => '0',
+    'Module::Build' => '0.21',
+    'base' => '0'
   },
   'recommends' => {
     'Astro::MoonPhase' => '0.60'
   },
   'requires' => {
+    'Carp' => '0',
     'Date::Calc' => '5.0',
-    'PostScript::File' => '2.01',
-    'perl' => '5.8.0'
+    'PostScript::File' => '2.20',
+    'perl' => '5.008'
   },
 );
 

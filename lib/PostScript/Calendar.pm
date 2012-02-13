@@ -21,15 +21,16 @@ use 5.008;
 use warnings;
 use strict;
 use Carp;
-use Date::Calc qw(Add_Delta_YM Day_of_Week Day_of_Week_to_Text
-                  Days_in_Month Localtime Mktime Month_to_Text);
-use PostScript::File 2.01;
+use Date::Calc 5.0 qw(Add_Delta_YM Day_of_Week Day_of_Week_to_Text
+                      Days_in_Month Localtime Mktime Month_to_Text);
+use PostScript::File 2.20 qw(str); # need use_functions
 
 
 #=====================================================================
 # Package Global Variables:
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
+# This file is part of PostScript-Calendar 1.01 (February 12, 2012)
 
 our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
 
@@ -42,7 +43,7 @@ our @phaseName = qw(NewMoon FirstQuarter FullMoon LastQuarter);
   sub FETCH   { $_[0]->($_[1]) }
 } # end PostScript::Calendar::Interpolation
 
-our (%E, %S, $psFile);
+our (%C, %E, %S, $psFile);
 tie %E, 'PostScript::Calendar::Interpolation', sub { $_[0] }; # eval
 # quoted string:
 tie %S, 'PostScript::Calendar::Interpolation', sub { $psFile->pstr(shift) };
@@ -58,6 +59,28 @@ sub firstdef
 
   $_[-1];
 } # end firstdef
+
+#---------------------------------------------------------------------
+sub _fmt_color
+{
+  my $color = shift;
+
+  if (not ref $color and $color =~ /^#((?:[0-9a-f]{3})+)$/i) {
+    my $hexcolor = $1;
+
+    my $digits = int(length($hexcolor) / 3); # Number of digits per color
+    my $max    = hex('F' x $digits);         # Max intensity per color
+
+    $color = [ map {
+      my $n = sprintf('%.3f',
+                      hex(substr($hexcolor, $_ * $digits, $digits)) / $max);
+      $n =~ s/\.?0+$//;
+      $n
+    } 0 .. 2 ];
+  } # end if color as hex triplet
+
+  str($color);
+} # end _fmt_color
 
 #---------------------------------------------------------------------
 # Round to an integer, but preserve undef:
@@ -88,6 +111,7 @@ sub evTxt        () { 0 }
 sub evPS         () { 1 }
 sub evBackground () { 2 }
 sub evTopMargin  () { 3 }
+sub evDict       () { 4 }
 
 ## use critic
 
@@ -104,6 +128,8 @@ sub new
     condense  => $p{condense},
     border    => firstdef($p{border}, 1),
     dayHeight => round($p{day_height}),
+    grid      => firstdef($p{grid}, 1),
+    gridWidth => firstdef($p{grid_width}, 0.72), # 3 pixels at 300dpi
     mini      => $p{mini_calendars},
     phases    => $p{phases},
     title     => firstdef($p{title},
@@ -128,6 +154,7 @@ sub new
     miniFont  => $p{mini_font} || 'Helvetica-iso',
     miniSize  => $p{mini_size} || 6,
     miniSkip  => firstdef($p{mini_skip}, 3),
+    borderWidth  => firstdef($p{border_width}, 0.72), # 3 pixels at 300dpi
     dateRightMar => firstdef($p{date_right_margin}, 4),
     dateTopMar   => firstdef($p{date_top_margin},   2),
     eventTopMar   => firstdef($p{event_top_margin},   $p{event_margin}, 2),
@@ -135,7 +162,10 @@ sub new
     eventRightMar => firstdef($p{event_right_margin}, $p{event_margin}, 2),
     miniSideMar   => firstdef($p{mini_side_margins}, $p{mini_margin}, 4),
     miniTopMar    => firstdef($p{mini_top_margin},   $p{mini_margin}, 4),
+    moonDark      => _fmt_color(firstdef($p{moon_dark}, 0)),
+    moonLight     => _fmt_color(firstdef($p{moon_light}, 1)),
     moonMargin    => firstdef($p{moon_margin}, 6),
+    shadeColor    => _fmt_color(firstdef($p{shade_color}, 0.85)),
   }, $class;
 
   my $days     = $self->{days};
@@ -159,8 +189,9 @@ sub new
       top         => $self->{topMar},
       left        => $self->{sideMar},
       right       => $self->{sideMar},
-      title       => PostScript::File->pstr($self->{title}),
+      title       => PostScript::File->quote_text($self->{title}),
       reencode    => 'cp1252',
+      strip       => 'all_comments',
       landscape   => $p{landscape},
     );
 
@@ -189,6 +220,7 @@ sub calc_moon_phases
 {
   my ($self, $year, $month) = @_;
 
+  # RECOMMEND PREREQ: Astro::MoonPhase 0.60
   require Astro::MoonPhase;
   Astro::MoonPhase->VERSION(0.60); # Need phaselist
 
@@ -253,14 +285,38 @@ sub add_event
 } # end add_event
 
 #---------------------------------------------------------------------
+sub _set_colors
+{
+  my $hash = shift;
+
+  while (@_) {
+    my $key   = shift;
+    my $color = shift;
+
+    $hash->{$key} = _fmt_color($color) if defined $color;
+  }
+} # end _set_colors
+
+#---------------------------------------------------------------------
 sub shade
 {
   my $self = shift @_;
 
+  my $options = ref($_[0]) ? shift @_ : {};
+
+  my %dict;
+  _set_colors(\%dict,
+    DayBackground => $options->{shade_color},
+    MoonDark      => $options->{moon_dark},
+    MoonLight     => $options->{moon_light},
+  );
+
   my $events = $self->{events};
 
-  while (@_) {
-    $events->[shift @_][evBackground] = "ShadeDay";
+  for my $date (@_) {
+    $events->[$date][evBackground] = "ShadeDay";
+
+    @{ $events->[$date][evDict] }{keys %dict} = values %dict if %dict;
   }
 } # end shade
 
@@ -272,6 +328,9 @@ sub shade_days_of_week
   my ($year, $month) = @$self{qw(year month)};
 
   my (@shade, @dates);
+
+  # Copy options over to shade:
+  push @dates, shift @_ if ref $_[0];
 
   # @shade indicates which days of week to shade
   foreach (@_) { $shade[$_ % 7] = 1 }
@@ -295,7 +354,7 @@ sub print_calendar
   local $psFile = my $ps = $self->{psFile};
 
   $ps->add_to_page( <<"END_TITLE" ) if length($p{title});
-$p{titleFont}$p{midpoint} $p{titleY} $S{$p{title}} showcenter
+$p{titleFont}$p{midpoint} $p{titleY} $S{$p{title}} showCenter
 END_TITLE
 
   $ps->add_to_page("$p{labelFont}\n");
@@ -307,13 +366,13 @@ END_TITLE
 
   my $x = $p{leftEdge} + $p{midday};
   foreach (@{ $p{dayNames} }) {
-    $ps->add_to_page("$x $p{labelY} $S{$_} showcenter\n");
+    $ps->add_to_page("$x $p{labelY} $S{$_} showCenter\n");
     $x += $dayWidth;
   }
 
   $ps->add_to_page($p{dateFont}) if $p{dateFont};
 
-  my $showdate = $p{dateShow} || 'showright';
+  my $showdate = $p{dateShow} || 'showRight';
   my $y = $p{dayTop} - $p{dateSize} - $p{dateTopMar};
 
   foreach my $row (@$grid) {
@@ -370,7 +429,7 @@ sub print_mini_calendar
     dayHeight  => $linespacing,
     dayWidth   => $dayWidth,
     dateStartX => $x + $sideMar + $midday,
-    dateShow   => 'showcenter',
+    dateShow   => 'showCenter',
     leftEdge   => $x + $sideMar,
     dayNames   => [ map { substr($_,0,1) } @{$self->{dayNames}} ],
     labelY     => $yTop - $fontsize - $linespacing,
@@ -393,17 +452,29 @@ sub print_events
   unshift @{$events->[evPS]}, $events->[evBackground]
       if $events->[evBackground];
 
+  my $dict = $events->[evDict];
+
+  if ($special and $events->[evPS]) {
+    $dict = { $dict ? %$dict : () };
+    $dict->{DayHeight} = $height;
+  }
+
+  if ($dict) {
+    $ps->set_min_langlevel(2);  # using dictionary literals
+    $ps->add_to_page(join("\n",
+      '<<',
+      ( map { "/$_ $dict->{$_}" } sort keys %$dict ),
+      ">> begin\n"
+    ));
+  } # end if dictionary
+
   # Handle PostScript events:
   if ($events->[evPS]) {
-    $ps->add_to_page("gsave\n$x $y translate\n");
-
-    $ps->add_to_page("1 dict begin\n/DayHeight $height def\n")
-        if $special;
-
-    $ps->add_to_page(join "\n", @{ $events->[evPS] }, '');
-
-    $ps->add_to_page("end\n") if $special;
-    $ps->add_to_page("grestore\n");
+    $ps->add_to_page(join "\n",
+      "gsave\n$x $y translate",
+      @{ $events->[evPS] },
+      "grestore\n"
+    );
   } # end if we have PostScript events
 
   # Handle text events:
@@ -418,6 +489,8 @@ sub print_events
 $E{$x + $eventLeftMar} $E{$y + $useY - $eventSize} [$text] Events
 END_EVENTS
   } # end if we have text events
+
+  $ps->add_to_page("end\n") if $dict;
 } # end print_events
 
 #---------------------------------------------------------------------
@@ -538,10 +611,10 @@ sub generate
   $ps->add_to_page(<<"END_PAGE_INIT");
 0 setlinecap
 0 setlinejoin
-3 pixel setlinewidth
 
 /DayHeight $dayHeight def
 /DayWidth $dayWidth def
+/DayBackground $self->{shadeColor} def
 /TitleSize $titleSize def
 /TitleFont /$self->{titleFont} findfont TitleSize scalefont def
 /LabelSize $dayLabelSize def
@@ -555,90 +628,12 @@ sub generate
 /MiniFont /$self->{miniFont} findfont MiniSize scalefont def
 END_PAGE_INIT
 
-  unless ($ps->has_function('PostScript_Calendar'))
-  { $ps->add_function('PostScript_Calendar', <<'END_FUNCTIONS') }
+  $ps->use_functions(qw(hLine vLine setColor showCenter showLeft showLines
+                        showRight));
+
+  unless ($ps->has_procset('PostScript_Calendar'))
+  { $ps->add_procset('PostScript_Calendar', <<'END_FUNCTIONS') }
 /pixel {72 mul 300 div} bind def % 300 dpi only
-
-%---------------------------------------------------------------------
-% Stroke a horizontal line:  WIDTH X Y hline
-
-/hline
-{
-  newpath
-  moveto
-  0 rlineto stroke
-} bind def
-
-%---------------------------------------------------------------------
-% Stroke a vertical line:  HEIGHT X Y vline
-
-/vline
-{
-  newpath
-  moveto
-  0 exch rlineto stroke
-} bind def
-
-%---------------------------------------------------------------------
-% Print text centered at a point:  X Y STRING showcenter
-%
-% Centers text horizontally
-
-/showcenter
-{
-  newpath
-  0 0 moveto
-  % stack X Y STRING
-  dup 4 1 roll                          % Put a copy of STRING on bottom
-  % stack STRING X Y STRING
-  false charpath flattenpath pathbbox   % Compute bounding box of STRING
-  % stack STRING X Y Lx Ly Ux Uy
-  pop exch pop                          % Discard Y values (... Lx Ux)
-  add 2 div neg                         % Compute X offset
-  % stack STRING X Y Ox
-  0                                     % Use 0 for y offset
-  newpath
-  moveto
-  rmoveto
-  show
-} bind def
-
-%---------------------------------------------------------------------
-% Print left justified text:  X Y STRING showleft
-%
-% Does not adjust vertical placement.
-
-/showleft
-{
-  newpath
-  3 1 roll  % STRING X Y
-  moveto
-  show
-} bind def
-
-%---------------------------------------------------------------------
-% Print right justified text:  X Y STRING showright
-%
-% Does not adjust vertical placement.
-
-/showright
-{
-  newpath
-  0 0 moveto
-  % stack X Y STRING
-  dup 4 1 roll                          % Put a copy of STRING on bottom
-  % stack STRING X Y STRING
-  false charpath flattenpath pathbbox   % Compute bounding box of STRING
-  % stack STRING X Y Lx Ly Ux Uy
-  pop exch pop                          % Discard Y values (... Lx Ux)
-  add neg                               % Compute X offset
-  % stack STRING X Y Ox
-  0                                     % Use 0 for y offset
-  newpath
-  moveto
-  rmoveto
-  show
-} bind def
 
 %---------------------------------------------------------------------
 % Display text events:  X Y [STRING ...] Events
@@ -646,17 +641,7 @@ END_PAGE_INIT
 /Events
 {
   EventFont setfont
-  {
-    2 index      % stack X Y STRING X
-    3 -1 roll    % stack X STRING X Y
-    dup          % stack X STRING X Y Y
-    EventSpacing sub
-    4 1 roll     % stack X Y' STRING X Y
-    newpath
-    moveto
-    show
-  } forall
-  pop pop        % pop off X & Y
+  EventSpacing /showLeft showLines
 } bind def
 
 %---------------------------------------------------------------------
@@ -674,13 +659,14 @@ END_PAGE_INIT
 } bind def
 
 %---------------------------------------------------------------------
-% Shade a day with the default background:
+% Shade a day:  ShadeDay
 
 /ShadeDay
 {
-  0.85 setgray
+  gsave
+  DayBackground setColor
   FillDay
-  0 setgray
+  grestore
 } bind def
 END_FUNCTIONS
 
@@ -695,15 +681,21 @@ END_FUNCTIONS
       $phase = ($phase + 1) % 4;
     } # end while @dates
 
-    $ps->add_to_page("/MoonMargin $self->{moonMargin} def\n");
+    $ps->add_to_page(<<"END_MOON_SETTINGS");
+/MoonDark $self->{moonDark} def
+/MoonLight $self->{moonLight} def
+/MoonMargin $self->{moonMargin} def
+END_MOON_SETTINGS
 
-    unless ($ps->has_function('PostScript_Calendar_Moon'))
-    { $ps->add_function('PostScript_Calendar_Moon', <<'END_MOON_FUNCTIONS') }
+    unless ($ps->has_procset('PostScript_Calendar_Moon'))
+    { $ps->add_procset('PostScript_Calendar_Moon', <<'END_MOON_FUNCTIONS') }
 %---------------------------------------------------------------------
 % Show the phase of the moon:  PHASE ShowPhase
 
 /ShowPhase
 {
+  gsave
+  3 pixel setlinewidth
   newpath
   MoonMargin DateSize 2 div add
   DayHeight MoonMargin sub
@@ -712,10 +704,14 @@ END_FUNCTIONS
   0 360 arc
   closepath
   cvx exec
+  grestore
 } bind def
 
-/NewMoon { fill } bind def
-/FullMoon { gsave 1 setgray fill grestore stroke } bind def
+/NewMoon { MoonDark setColor fill } bind def
+/FullMoon {
+  gsave MoonLight setColor fill grestore
+  MoonDark setColor stroke
+} bind def
 
 /FirstQuarter
 {
@@ -763,7 +759,7 @@ END_MOON_FUNCTIONS
               if $events->[$day->[2]];
 
           $ps->add_to_page(<<"END_SPLIT_LINE");
-$dayWidth $x $lineY hline
+$dayWidth $x $lineY hLine
 END_SPLIT_LINE
         } elsif ($day->[0] eq 'calendar') {
           $self->print_mini_calendar(@$day[1,2], $x, $y, $dayWidth, $dayHeight);
@@ -794,20 +790,22 @@ END_SPLIT_LINE
     dateTopMar => $self->{dateTopMar},
   );
 
-  $ps->add_to_page(<<"END_HOR_LINES");
+  if ($self->{grid}) {
+    $ps->add_to_page(<<"END_GRID");
+$self->{gridWidth} setlinewidth
 $E{$gridBottom + $dayHeight} $dayHeight $dayTop\ {
-  $gridWidth $leftEdge 3 -1 roll hline
+  $gridWidth $leftEdge 3 -1 roll hLine
 } for
-END_HOR_LINES
 
-  $ps->add_to_page(<<"END_VERT_LINES");
 $E{$leftEdge + $dayWidth} $dayWidth $E{$gridRight - $midday}\ {
-  $gridHeight exch $gridBottom vline
+  $gridHeight exch $gridBottom vLine
 } for
-END_VERT_LINES
+END_GRID
+  } # end if grid
 
   if ($self->{border}) {
     $ps->add_to_page(<<"END_BORDER");
+$self->{borderWidth} setlinewidth
 newpath
 $leftEdge $gridTop moveto
 $gridWidth 0 rlineto
@@ -816,7 +814,7 @@ $gridWidth 0 rlineto
 closepath stroke
 END_BORDER
   } else {
-    $ps->add_to_page("$gridWidth $leftEdge $gridTop hline\n");
+    $ps->add_to_page("$gridWidth $leftEdge $gridTop hLine\n");
   }
 
   $self->{generated} = 1;
@@ -835,6 +833,16 @@ sub output
 #---------------------------------------------------------------------
 sub ps_file { $_[0]->{psFile} }
 
+#---------------------------------------------------------------------
+sub get__PostScript_File
+{
+  my $self = shift @_;
+
+  $self->generate unless $self->{generated};
+
+  $self->{psFile};
+} # end output
+
 #=====================================================================
 # Package Return Value:
 
@@ -848,8 +856,8 @@ PostScript::Calendar - Generate a monthly calendar in PostScript
 
 =head1 VERSION
 
-This document describes version 1.00 of
-PostScript::Calendar, released November 11, 2010.
+This document describes version 1.01 of
+PostScript::Calendar, released February 12, 2012.
 
 =head1 SYNOPSIS
 
@@ -858,6 +866,10 @@ PostScript::Calendar, released November 11, 2010.
   my $cal = PostScript::Calendar->new($year, $month, phases => 1,
                                       mini_calendars => 'before');
   $cal->output('filename');
+
+  # Or, if you want PDF output instead of PostScript:
+  use PostScript::Convert;
+  psconvert($cal, "filename.pdf");
 
 =head1 DESCRIPTION
 
@@ -872,6 +884,13 @@ from 1 to 12.  Days of the week can be specified as 0 to 7 (where
 Sunday is either 0 or 7, Monday is 1, etc.).
 
 All dimensions are specified in PostScript points (72 per inch).
+
+Colors can be specified either as a number in the range 0 to 1 (where
+0 is black and 1 is white), or an arrayref of three numbers
+S<C<[ Red, Green, Blue ]>> where each number is in the range 0 to 1.
+
+In addition, you can specify an RGB color in the HTML hex triplet form
+prefixed by C<#> (like C<#FFFF00> or C<#FF0> for yellow).
 
 =head1 METHODS
 
@@ -892,6 +911,12 @@ pairs.
 If false, omit the border around the calendar grid (only internal grid
 lines are drawn).  The default is true.
 
+=item C<border_width>
+
+The width of the border drawn around the calendar grid (assuming
+C<border> is true).  The default is 0.72 points, which is 3 pixels on
+a 300dpi printer.
+
 =item C<condense>
 
 If true, reduce calendars that would span 6 rows down to 5 rows by
@@ -905,6 +930,17 @@ portrait-mode calendars from taking up the entire page (which just
 doesn't look right).  The default is 0, which means there is no
 maximum value.  I recommend 96 for a portrait-mode calendar on US
 letter size paper.
+
+=item C<grid>
+
+If false, omit the internal grid lines in the calendar (only the
+external border is drawn).  The default is true.
+
+=item C<grid_width>
+
+The width of the internal grid lines in the calendar (assuming C<grid>
+is true).  The default is 0.72 points, which is 3 pixels on a 300dpi
+printer.
 
 =item C<mini_calendars>
 
@@ -1048,15 +1084,32 @@ C<mini_margin>.
 The space (in points) to leave on each side of mini calendars.
 Defaults to C<mini_margin>.
 
+=item C<moon_dark>
+
+The color to use for the dark portions of the moon icon.
+Defaults to 0 (black).
+
+=item C<moon_light>
+
+The color to use for the light portions of the moon icon.
+Defaults to 1 (white).
+
 =item C<moon_margin>
 
 Space to leave above and to the left of the moon icon.  Defaults to 6.
+
+=item C<shade_color>
+
+The default background color used by the C<shade> method.  Defaults to 0.85
+(a light gray).
 
 =item C<shade_days_of_week>
 
 An arrayref of days of the week to be passed to the
 C<shade_days_of_week> method.  (I found it convenient to be able to pass
 this to the constructor instead of making a separate method call.)
+
+The first element of the arrayref may be a hashref of options.
 
 =item C<margin>
 
@@ -1137,19 +1190,44 @@ needed for advanced techniques.
 
 =head2 shade
 
-  $cal->shade($date, ...)
+  $cal->shade( [\%options,] $date, ...)
 
-This colors the background of the specified date(s) a light gray,
+This colors the background of the specified date(s),
 where C<$date> is the day of the month.  Any number of dates can be
 given.
+
+Optionally, the first argument may be a hashref containing options.
+The recognized options are:
+
+=over
+
+=item C<shade_color>
+
+The color to shade the day's background.  Defaults to the
+value passed to the constructor.
+
+=item C<moon_dark>
+
+The color to use for the dark portions of the moon phase indicator
+(if present).  Defaults to the value passed to the constructor.
+
+=item C<moon_light>
+
+The color to use for the light portions of the moon phase indicator
+(if present).  Defaults to the value passed to the constructor.
+
+=back
 
 
 =head2 shade_days_of_week
 
-  $cal->shade_days_of_week($day, ...)
+  $cal->shade_days_of_week( [\%options,] $day, ...)
 
 This calls C<shade> for all dates that fall on the specified day(s) of
 the week.  Each C<$day> should be 0-7 (where Sunday is either 0 or 7).
+
+Optionally, the first argument may be a hashref containing options.
+See L</shade> for the available options.
 
 =head1 DIAGNOSTICS
 
@@ -1173,7 +1251,7 @@ PostScript::Calendar requires no configuration files or environment variables.
 =head1 DEPENDENCIES
 
 L<Date::Calc> (5.0 or later)
-and L<PostScript::File> (2.01 or later).
+and L<PostScript::File> (2.20 or later).
 
 If you want to display phases of the moon, you'll need
 L<Astro::MoonPhase> (0.60 or later).
@@ -1188,34 +1266,35 @@ None reported.
 
 No bugs have been reported.
 
-=for Pod::Coverage::TrustPod
-^Add_Delta_M
-^calc_moon_phases
-^compute_grid
-^ev[A-Z]
-^firstdef
-^get_metrics
-^print_calendar
-^print_events
-^print_mini_calendar
-^round
-^wrap_events
+=for Pod::Coverage
+Add_Delta_M
+calc_moon_phases
+compute_grid
+ev[A-Z]\w+
+firstdef
+get_metrics
+get__PostScript_File
+print_calendar
+print_events
+print_mini_calendar
+round
+wrap_events
 
 =head1 AUTHOR
 
 Christopher J. Madsen  S<C<< <perl AT cjmweb.net> >>>
 
-Please report any bugs or feature requests to
-S<C<< <bug-PostScript-Calendar AT rt.cpan.org> >>>,
+Please report any bugs or feature requests
+to S<C<< <bug-PostScript-Calendar AT rt.cpan.org> >>>
 or through the web interface at
-L<http://rt.cpan.org/Public/Bug/Report.html?Queue=PostScript-Calendar>
+L<< http://rt.cpan.org/Public/Bug/Report.html?Queue=PostScript-Calendar >>.
 
 You can follow or contribute to PostScript-Calendar's development at
-git://github.com/madsen/postscript-calendar.git.
+L<< http://github.com/madsen/postscript-calendar >>.
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2010 by Christopher J. Madsen.
+This software is copyright (c) 2012 by Christopher J. Madsen.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

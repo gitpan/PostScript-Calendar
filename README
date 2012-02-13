@@ -1,4 +1,4 @@
-PostScript::Calendar version 1.00, released November 11, 2010
+PostScript::Calendar version 1.01, released February 12, 2012
 
 
 PostScript::Calendar generates printable calendars using PostScript.
@@ -24,26 +24,32 @@ DEPENDENCIES
 
   Package           Minimum Version
   ----------------- ---------------
-  perl               5.8.0
+  perl               5.008
+  Carp               
   Date::Calc         5.0
-  PostScript::File   2.01
+  PostScript::File   2.20
 
 To display phases of the moon:
 
 
 
 CHANGES
-    Here's what's new in version 1.00 of PostScript::Calendar:
+    Here's what's new in version 1.01 of PostScript::Calendar:
     (See the file "Changes" for the full revision history.)
 
-	- No functional changes
-	- Restart test if necessary to pick up timezone change (Windows)
+	- New constructor parameters: border_width, grid, grid_width,
+	  moon_dark, moon_light, & shade_color
+	- The shade methods can now take options to customize the color.
+	  This will generate code that requires PostScript level 2.
+	- PostScript::Calendar objects can now be passed to PostScript::Convert
+	- Use the function library provided by PostScript::File 2.20
+	- All comments are stripped from the generated PostScript
 
 
 
 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2010 by Christopher J. Madsen.
+This software is copyright (c) 2012 by Christopher J. Madsen.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
